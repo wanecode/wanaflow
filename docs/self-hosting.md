@@ -81,7 +81,7 @@ For infrastructure automation, copy `.env.selfhost.example` to
 ```sh
 docker compose --env-file .env.selfhost -f compose.selfhost.yaml up -d --build --wait
 docker compose --env-file .env.selfhost -f compose.selfhost.yaml \
-  --profile setup run --rm bootstrap
+  --profile setup run --rm --no-deps bootstrap
 tooling/selfhost/smoke.sh
 ```
 
@@ -136,8 +136,10 @@ docker compose --env-file .env.selfhost -f compose.selfhost.yaml logs -f web wor
 ```
 
 `/api/health` reports only readiness and database latency; it does not expose
-the database name or credentials. Caddy adds compression, conservative browser
-security headers, upstream health checks, and HTTP-to-HTTPS redirection.
+the database name or credentials. Container logs use Docker's bounded local
+driver so a noisy public demo cannot consume the host disk indefinitely. Caddy
+adds compression, conservative browser security headers, upstream health
+checks, and HTTP-to-HTTPS redirection.
 
 ## Demo security boundary
 

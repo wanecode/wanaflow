@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/wanecode/wanaflow/actions/workflows/ci.yml/badge.svg)](https://github.com/wanecode/wanaflow/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-315c4d.svg)](LICENSE)
+[![Live demo](https://img.shields.io/badge/live_demo-open-8f6f4d.svg)](https://wanaflow.178-104-79-171.sslip.io)
 
 Wanaflow is an open-source business process workspace for collaboratively
 designing, reviewing, approving, and running BPMN processes, DMN decisions,
