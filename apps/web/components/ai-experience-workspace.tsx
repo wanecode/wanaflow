@@ -61,6 +61,16 @@ type UndoSnapshot = {
   source: string;
   label: string;
 };
+type ChoiceArgs = {
+  question?: string;
+  explanation?: string;
+  selection?: "SINGLE" | "MULTIPLE";
+  options?: Array<{ id: string; label: string; description?: string }>;
+};
+type ApprovalArgs = { summary?: string };
+type InterruptedHumanTool =
+  | { kind: "CHOICE"; messageId: string; toolCallId: string; args: ChoiceArgs }
+  | { kind: "APPROVAL"; messageId: string; toolCallId: string; args: ApprovalArgs };
 
 const EMPTY_FORM_DATA: Record<string, unknown> = {};
 const stableArtifactKeySchema = z.string().min(2).max(63)
@@ -99,6 +109,70 @@ const choiceOptionSchema = z.object({
   label: z.string().min(1).max(160),
   description: z.string().max(300).optional(),
 }).strict();
+const choicePromptSchema = z.object({
+  question: z.string().min(1).max(1_000),
+  explanation: z.string().max(500).optional(),
+  selection: z.enum(["SINGLE", "MULTIPLE"]),
+  options: z.array(choiceOptionSchema).min(2).max(6),
+}).strict();
+const approvalPromptSchema = z.object({
+  summary: z.string().max(2_000).describe("A concise business summary for the reviewers"),
+}).strict();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseToolArguments(value: unknown) {
+  if (isRecord(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function findInterruptedHumanTool(transcript: unknown[]): InterruptedHumanTool | null {
+  const completedToolCalls = new Set<string>();
+  for (const message of transcript) {
+    if (!isRecord(message) || message.role !== "tool" || typeof message.toolCallId !== "string") continue;
+    completedToolCalls.add(message.toolCallId);
+  }
+
+  for (let messageIndex = transcript.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = transcript[messageIndex];
+    if (!isRecord(message) || message.role !== "assistant" || typeof message.id !== "string" || !Array.isArray(message.toolCalls)) continue;
+    for (let callIndex = message.toolCalls.length - 1; callIndex >= 0; callIndex -= 1) {
+      const toolCall = message.toolCalls[callIndex];
+      if (!isRecord(toolCall) || typeof toolCall.id !== "string" || completedToolCalls.has(toolCall.id) || !isRecord(toolCall.function)) continue;
+      const name = toolCall.function.name;
+      const parameters = parseToolArguments(toolCall.function.arguments);
+      if (!parameters) continue;
+      if (name === "ask_choices") {
+        const parsed = choicePromptSchema.safeParse(parameters);
+        if (parsed.success) return { kind: "CHOICE", messageId: message.id, toolCallId: toolCall.id, args: parsed.data };
+      }
+      if (name === "request_approval") {
+        const parsed = approvalPromptSchema.safeParse(parameters);
+        if (parsed.success) return { kind: "APPROVAL", messageId: message.id, toolCallId: toolCall.id, args: parsed.data };
+      }
+    }
+  }
+  return null;
+}
+
+function withoutInterruptedToolCall(transcript: unknown[], interrupted: InterruptedHumanTool) {
+  return transcript.map((message) => {
+    if (!isRecord(message) || message.id !== interrupted.messageId || !Array.isArray(message.toolCalls)) return message;
+    const remaining = message.toolCalls.filter((toolCall) => !isRecord(toolCall) || toolCall.id !== interrupted.toolCallId);
+    const next = { ...message };
+    if (remaining.length) next.toolCalls = remaining;
+    else delete next.toolCalls;
+    return next;
+  });
+}
 
 function normalizeStableKey(value: string) {
   let key = value.trim().toLowerCase()
@@ -211,12 +285,7 @@ function ChoicePrompt({
 }: {
   experienceId: string;
   status: ToolStatus;
-  args: {
-    question?: string;
-    explanation?: string;
-    selection?: "SINGLE" | "MULTIPLE";
-    options?: Array<{ id: string; label: string; description?: string }>;
-  };
+  args: ChoiceArgs;
   toolCallId: string;
   result?: string;
   respond?: (result: unknown) => Promise<void>;
@@ -292,7 +361,7 @@ function ApprovalPrompt({
   experienceId: string;
   artifact?: Artifact;
   status: ToolStatus;
-  args: { summary?: string };
+  args: ApprovalArgs;
   toolCallId: string;
   result?: string;
   respond?: (result: unknown) => Promise<void>;
@@ -402,7 +471,12 @@ function ExperienceAgent({
   const initialized = useRef(false);
   const runningRef = useRef(false);
   const experienceRef = useRef(experience);
+  const agentRef = useRef(agent);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [interruptedHumanTool, setInterruptedHumanTool] = useState<InterruptedHumanTool | null>(
+    () => findInterruptedHumanTool(experience.transcript),
+  );
+  const [recoveryReceipt, setRecoveryReceipt] = useState<string | null>(null);
   const [undoSnapshots, setUndoSnapshots] = useState<Record<string, UndoSnapshot>>({});
   const [undoingToolCallId, setUndoingToolCallId] = useState<string | null>(null);
   const [undoneToolCallIds, setUndoneToolCallIds] = useState<string[]>([]);
@@ -411,6 +485,10 @@ function ExperienceAgent({
   useEffect(() => {
     experienceRef.current = experience;
   }, [experience]);
+
+  useEffect(() => {
+    agentRef.current = agent;
+  }, [agent]);
 
   const refresh = useCallback(async () => {
     onExperienceChange(await loadAiExperience(experience.id));
@@ -589,12 +667,7 @@ function ExperienceAgent({
     name: "ask_choices",
     agentId: localAgentId,
     description: "The only permitted way to ask the user for information or direction. Always provide 2 to 6 useful choices. Call this only after prior artifact tools complete and never in parallel with another tool.",
-    parameters: z.object({
-      question: z.string().min(1).max(1_000),
-      explanation: z.string().max(500).optional(),
-      selection: z.enum(["SINGLE", "MULTIPLE"]),
-      options: z.array(choiceOptionSchema).min(2).max(6),
-    }).strict(),
+    parameters: choicePromptSchema,
     render: ({ status, args, toolCallId, result, respond }) => <ChoicePrompt experienceId={experience.id} status={status} args={args} toolCallId={toolCallId} result={result} respond={respond} />,
   }, [experience.id, localAgentId]);
 
@@ -602,9 +675,7 @@ function ExperienceAgent({
     name: "request_approval",
     agentId: localAgentId,
     description: "Begin the explicit human approval workflow only after the user chose approval in a prior ask_choices response. This tool pins the exact main-process revision and lets the user choose independent reviewers in chat.",
-    parameters: z.object({
-      summary: z.string().max(2_000).describe("A concise business summary for the reviewers"),
-    }).strict(),
+    parameters: approvalPromptSchema,
     render: ({ status, args, toolCallId, result, respond }) => <ApprovalPrompt experienceId={experience.id} artifact={mainArtifact} status={status} args={args} toolCallId={toolCallId} result={result} respond={respond} />,
   }, [experience.id, localAgentId, mainArtifact?.id, mainArtifact?.revision.id]);
 
@@ -637,7 +708,10 @@ function ExperienceAgent({
     if (!isReady || initialized.current) return;
     initialized.current = true;
     if (experience.transcript.length) {
-      agent.setMessages(experience.transcript as never[]);
+      const transcript = interruptedHumanTool
+        ? withoutInterruptedToolCall(experience.transcript, interruptedHumanTool)
+        : experience.transcript;
+      agent.setMessages(transcript as never[]);
       return;
     }
     agent.addMessage({
@@ -650,17 +724,44 @@ function ExperienceAgent({
         setRuntimeError(error instanceof Error ? error.message : "The AI run stopped unexpectedly.");
       });
     }
-  }, [agent, aiStatus.configured, copilotkit, experience.description, experience.title, experience.transcript, isReady]);
+  }, [agent, aiStatus.configured, copilotkit, experience.description, experience.title, experience.transcript, interruptedHumanTool, isReady]);
+
+  const resumeInterruptedHumanTool = useCallback(async (result: unknown) => {
+    if (!interruptedHumanTool) return;
+    let content = "Continue from the current saved draft.";
+    if (isRecord(result)) {
+      if (interruptedHumanTool.kind === "CHOICE" && Array.isArray(result.selectedLabels)) {
+        const labels = result.selectedLabels.filter((label): label is string => typeof label === "string");
+        if (labels.length) content = `Direction selected: ${labels.join(", ")}. Continue from that direction.`;
+      } else if (interruptedHumanTool.kind === "APPROVAL") {
+        if (result.cancelled === true) content = "Keep this as a draft for now.";
+        else if (Array.isArray(result.reviewerNames)) {
+          const names = result.reviewerNames.filter((name): name is string => typeof name === "string");
+          if (names.length) content = `The current draft was sent for review to ${names.join(", ")}.`;
+        }
+      }
+    }
+    setRecoveryReceipt(content);
+    setInterruptedHumanTool(null);
+    const currentAgent = agentRef.current;
+    currentAgent.addMessage({ id: crypto.randomUUID(), role: "user", content });
+    if (!aiStatus.configured) return;
+    setRuntimeError(null);
+    void copilotkit.runAgent({ agent: currentAgent }).catch((error: unknown) => {
+      setRuntimeError(error instanceof Error ? error.message : "The AI run stopped unexpectedly.");
+    });
+  }, [aiStatus.configured, copilotkit, interruptedHumanTool]);
 
   const submit = (value: string) => {
     const text = value.trim();
-    if (!text || !aiStatus.configured || agent.isRunning) return;
+    if (!text || !aiStatus.configured || agent.isRunning || interruptedHumanTool) return;
     setRuntimeError(null);
     agent.addMessage({ id: crypto.randomUUID(), role: "user", content: text });
     void copilotkit.runAgent({ agent }).catch((error: unknown) => {
       setRuntimeError(error instanceof Error ? error.message : "The AI run stopped unexpectedly.");
     });
   };
+  const showRecoveryReceipt = Boolean(recoveryReceipt);
 
   return (
     <section className="grid min-h-0 border-r border-[var(--line)] bg-[var(--paper-raised)] lg:grid-rows-[72px_minmax(0,1fr)]">
@@ -685,11 +786,11 @@ function ExperienceAgent({
           onStop={() => agent.abortRun()}
           input={{
             className: "wana-ai-composer",
-            textArea: { placeholder: aiStatus.configured ? "Describe a change, constraint, or goal…" : "Connect DeepSeek to continue…", disabled: !aiStatus.configured || agent.isRunning },
+            textArea: { placeholder: aiStatus.configured ? "Describe a change, constraint, or goal…" : "Connect DeepSeek to continue…", disabled: !aiStatus.configured || agent.isRunning || Boolean(interruptedHumanTool) },
             showDisclaimer: false,
           }}
         >
-          {({ scrollView, input }) => <div className="flex size-full min-h-0 flex-col"><div className="min-h-0 flex-1">{scrollView}</div><div className="border-t border-[var(--line)] px-4 pb-4 pt-3">{agent.isRunning ? <div className="mb-2.5 flex items-center gap-2 px-1 text-[0.625rem] font-semibold text-[var(--muted-ink)]"><LoaderCircle className="size-3 animate-spin text-[var(--signal)]" /> Wana is working through the next useful step</div> : mode === "debug" ? <div className="mb-2.5 flex items-center gap-2 px-1 font-mono text-[0.56rem] text-[var(--faint-ink)]"><Circle className="size-2 fill-[var(--moss)] text-[var(--moss)]" /> thread {experience.id.slice(0, 8)} · {agent.messages.length} messages</div> : null}{input}<p className="mt-2 text-center text-[0.55rem] text-[var(--faint-ink)]">Wana drafts. People review, approve, and deploy.</p></div></div>}
+          {({ scrollView, input }) => <div className="flex size-full min-h-0 flex-col"><div className="min-h-0 flex-1">{scrollView}</div>{interruptedHumanTool ? <div className="border-t border-[var(--line)] px-4"><p className="pt-3 text-[0.58rem] font-bold uppercase tracking-[0.12em] text-[var(--faint-ink)]">Conversation restored</p>{interruptedHumanTool.kind === "CHOICE" ? <ChoicePrompt experienceId={experience.id} status="executing" args={interruptedHumanTool.args} toolCallId={interruptedHumanTool.toolCallId} respond={resumeInterruptedHumanTool} /> : <ApprovalPrompt experienceId={experience.id} artifact={mainArtifact} status="executing" args={interruptedHumanTool.args} toolCallId={interruptedHumanTool.toolCallId} respond={resumeInterruptedHumanTool} />}</div> : null}{showRecoveryReceipt ? <div className="border-t border-[var(--line)] px-4 py-3"><p className="ml-auto max-w-[82%] rounded-[var(--radius)] bg-[var(--wash)] px-3.5 py-2.5 text-xs leading-5 text-[var(--ink)]">{recoveryReceipt}</p></div> : null}<div className="border-t border-[var(--line)] px-4 pb-4 pt-3">{agent.isRunning ? <div className="mb-2.5 flex items-center gap-2 px-1 text-[0.625rem] font-semibold text-[var(--muted-ink)]"><LoaderCircle className="size-3 animate-spin text-[var(--signal)]" /> Wana is working through the next useful step</div> : mode === "debug" ? <div className="mb-2.5 flex items-center gap-2 px-1 font-mono text-[0.56rem] text-[var(--faint-ink)]"><Circle className="size-2 fill-[var(--moss)] text-[var(--moss)]" /> thread {experience.id.slice(0, 8)} · {agent.messages.length} messages</div> : null}{input}<p className="mt-2 text-center text-[0.55rem] text-[var(--faint-ink)]">Wana drafts. People review, approve, and deploy.</p></div></div>}
         </CopilotChatView>
         </div>
       </div>
