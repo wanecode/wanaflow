@@ -6,10 +6,17 @@ x-wanaflow-image: &wanaflow-image
     context: .
     target: release
 
+x-wanaflow-logging: &wanaflow-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:18.4-alpine3.23
     restart: unless-stopped
+    logging: *wanaflow-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-wanaflow}
       POSTGRES_USER: ${POSTGRES_USER:-wanaflow}
@@ -26,6 +33,7 @@ services:
 
   migrate:
     <<: *wanaflow-image
+    logging: *wanaflow-logging
     environment: &wanaflow-environment
       DATABASE_URL: postgresql://${POSTGRES_USER:-wanaflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wanaflow}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
@@ -49,6 +57,7 @@ services:
     <<: *wanaflow-image
     init: true
     restart: unless-stopped
+    logging: *wanaflow-logging
     environment: *wanaflow-environment
     expose:
       - "3000"
@@ -70,6 +79,7 @@ services:
     <<: *wanaflow-image
     init: true
     restart: unless-stopped
+    logging: *wanaflow-logging
     environment: *wanaflow-environment
     command: ["pnpm", "--filter", "@wanaflow/worker", "start"]
     depends_on:
@@ -88,6 +98,7 @@ services:
     image: caddy:2.10-alpine
     init: true
     restart: unless-stopped
+    logging: *wanaflow-logging
     environment:
       WANAFLOW_SITE_ADDRESS: ${WANAFLOW_SITE_ADDRESS:?Set WANAFLOW_SITE_ADDRESS}
       ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
@@ -108,6 +119,7 @@ services:
   bootstrap:
     <<: *wanaflow-image
     profiles: ["setup"]
+    logging: *wanaflow-logging
     environment:
       <<: *wanaflow-environment
       WANAFLOW_BOOTSTRAP_EMAIL: ${WANAFLOW_BOOTSTRAP_EMAIL:-}

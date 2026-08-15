@@ -144,7 +144,9 @@ compose() {
 
 compose config --quiet
 compose up -d --build --wait
-compose --profile setup run --rm bootstrap
+# The stack is already healthy here. Do not let the one-off bootstrap command
+# recreate its dependencies and interrupt PostgreSQL-backed workers.
+compose --profile setup run --rm --no-deps bootstrap
 
 WANAFLOW_ENV_FILE=$env_file WANAFLOW_COMPOSE_FILE=$compose_file tooling/selfhost/smoke.sh
 
