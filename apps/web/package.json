@@ -15,8 +15,8 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "2.0.67",
     "@bpmn-io/form-js": "1.24.1",
-    "@copilotkit/react-core": "1.67.1",
-    "@copilotkit/runtime": "1.67.1",
+    "@copilotkit/react-core": "1.68.1",
+    "@copilotkit/runtime": "1.68.1",
     "@wanaflow/db": "workspace:*",
     "@wanaflow/modeling": "workspace:*",
     "@wanaflow/runtime": "workspace:*",
