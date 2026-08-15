@@ -2,6 +2,9 @@ packages:
   - apps/*
   - packages/*
 
+overrides:
+  'undici@<6.28.0': 6.28.0
+
 allowBuilds:
   '@carbon/grid': false
   '@carbon/layout': false
@@ -14,3 +17,16 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@ai-sdk/gateway@3.0.173'
   - ai@6.0.255
+  - '@copilotkit/a2ui-renderer@1.68.1'
+  - '@copilotkit/channels-core@0.9.0'
+  - '@copilotkit/channels-intelligence@0.9.0'
+  - '@copilotkit/channels-slack@0.9.0'
+  - '@copilotkit/channels-teams@0.9.0'
+  - '@copilotkit/channels-ui@0.9.0'
+  - '@copilotkit/core@1.68.0 || 1.68.1'
+  - '@copilotkit/react-core@1.68.1'
+  - '@copilotkit/runtime-client-gql@1.68.1'
+  - '@copilotkit/runtime@1.68.1'
+  - '@copilotkit/shared@1.68.0 || 1.68.1'
+  - '@copilotkit/web-components@1.68.1'
+  - '@copilotkit/web-inspector@1.68.1'
