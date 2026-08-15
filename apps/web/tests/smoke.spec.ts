@@ -314,6 +314,50 @@ test("Create with Wana opens a persistent experience and previews validated arti
   await expect(page.locator(".djs-container")).toBeVisible();
   await expect(page.getByText("revision 2 · valid")).toBeVisible();
 
+  const interruptedChoiceId = "choice-interrupted";
+  const interruptedTranscript = [
+    { id: "message-user", role: "user", content: "Help me finish supplier onboarding." },
+    {
+      id: "message-assistant",
+      role: "assistant",
+      content: "The saved draft is coherent. One ownership decision remains.",
+      toolCalls: [{
+        id: interruptedChoiceId,
+        type: "function",
+        function: {
+          name: "ask_choices",
+          arguments: JSON.stringify({
+            question: "Who should own the supplier review?",
+            selection: "SINGLE",
+            options: [
+              { id: "finance", label: "Finance", description: "Finance owns the review." },
+              { id: "procurement", label: "Procurement", description: "Procurement owns the review." },
+            ],
+          }),
+        },
+      }],
+    },
+  ];
+  const interruptedResponse = await page.request.patch(`/api/v1/ai-experiences/${experienceId}`, {
+    data: { transcript: interruptedTranscript },
+  });
+  expect(interruptedResponse.status(), await interruptedResponse.text()).toBe(200);
+  await page.reload();
+  await expect(page.getByText("Conversation restored")).toBeVisible();
+  await expect(page.getByText("Who should own the supplier review?")).toBeVisible();
+  await expect(page.getByText("Preparing a few clear directions")).toHaveCount(0);
+  await page.getByRole("button", { name: /Finance Finance owns the review/ }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/v1/ai-experiences/${experienceId}`);
+    const body = (await response.json()) as { data: { transcript: Array<{ content?: string }> } };
+    return body.data.transcript.at(-1)?.content;
+  }).toBe("Direction selected: Finance. Continue from that direction.");
+  await expect(page.getByText("Direction selected: Finance. Continue from that direction.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Conversation restored")).toHaveCount(0);
+  await expect(page.getByText("Direction selected: Finance. Continue from that direction.")).toBeVisible();
+
   await page.getByRole("button", { name: "Debug" }).click();
   await expect(page.getByText(new RegExp(`thread ${experienceId.slice(0, 8)}`))).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("ai-experience-studio.png"), fullPage: true });
