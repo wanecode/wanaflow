@@ -1,0 +1,2788 @@
+openapi: 3.1.0
+info:
+  title: Wanaflow API
+  version: 0.0.0
+  summary: Authenticated design, release, and runtime contract
+  description: |
+    The implemented pre-alpha REST contract for projects, BPMN artifacts,
+    immutable draft revisions, reviews, publications, environments,
+    deployments, deployed DMN evaluations, durable process instances, assigned or claimable tasks,
+    project packages, team collaboration, notifications, external jobs, timers,
+    message subscriptions, and
+    timelines. Studio/operator routes require a Wanaflow browser session;
+    external workers use a project-scoped bearer credential
+    and resolves it through organization membership plus deny-by-default role
+    authorization. A session with multiple organizations selects one with the
+    `X-Wanaflow-Organization` header.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development
+security:
+  - SessionCookie: []
+tags:
+  - name: Library
+  - name: Projects
+  - name: Artifacts
+  - name: Reviews
+  - name: Publications
+  - name: Environments
+  - name: Deployments
+  - name: Decisions
+  - name: Runtime
+  - name: Tasks
+  - name: Portability
+  - name: Team
+  - name: Notifications
+  - name: External Jobs
+  - name: Timers
+  - name: Messages
+  - name: Worker Credentials
+paths:
+  /library:
+    get:
+      operationId: getOrganizationLibrary
+      tags: [Library]
+      summary: Get the current principal's authorized process library
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Organization context, permissions, workspaces, projects, and artifact heads
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Wanaflow-Auth-Mode:
+              $ref: "#/components/headers/AuthMode"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/OrganizationLibrary"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/PermissionDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /workspaces/{workspaceId}/projects:
+    post:
+      operationId: createProject
+      tags: [Projects]
+      summary: Create a project in an authorized workspace
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProject"
+      responses:
+        "201":
+          description: Project created
+          headers:
+            Location:
+              schema: { type: string }
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/PermissionDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ResourceConflict"
+  /projects/{projectId}/package:
+    get:
+      operationId: exportProjectPackage
+      tags: [Portability]
+      summary: Export the current BPMN, DMN, and form heads as one checked package
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Portable project package
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ProjectPackage" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /workspaces/{workspaceId}/package:
+    post:
+      operationId: importProjectPackage
+      tags: [Portability]
+      summary: Atomically import an integrity-checked project package
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectPackage" }
+      responses:
+        "201":
+          description: Imported project
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "409": { $ref: "#/components/responses/ResourceConflict" }
+        "422": { $ref: "#/components/responses/InvalidBpmn" }
+  /projects/{projectId}/artifacts:
+    get:
+      operationId: listProjectArtifacts
+      tags: [Artifacts]
+      summary: List current artifact draft heads in a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Current artifacts ordered by most recently updated
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Artifact"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/PermissionDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createArtifact
+      tags: [Artifacts]
+      summary: Create a BPMN artifact and its first immutable revision
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateArtifact"
+      responses:
+        "201":
+          description: Artifact and first revision created
+          headers:
+            ETag:
+              $ref: "#/components/headers/RevisionEtag"
+            Location:
+              schema: { type: string }
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/PermissionDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ResourceConflict"
+        "422":
+          $ref: "#/components/responses/InvalidBpmn"
+  /artifacts/{artifactId}:
+    get:
+      operationId: getArtifact
+      tags: [Artifacts]
+      summary: Get an artifact and its current draft revision
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Current artifact draft head
+          headers:
+            ETag:
+              $ref: "#/components/headers/RevisionEtag"
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactEnvelope"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/PermissionDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /artifacts/{artifactId}/revisions:
+    post:
+      operationId: saveArtifactRevision
+      tags: [Artifacts]
+      summary: Save an immutable BPMN draft revision
+      description: |
+        `If-Match` must contain the quoted revision UUID that the editor loaded.
+        A different current head returns `REVISION_CONFLICT`. Submitting source
+        identical to the current head is idempotent and returns `200`.
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: If-Match
+          in: header
+          required: true
+          description: Quoted base revision UUID
+          schema:
+            type: string
+            pattern: '^"[0-9a-fA-F-]{36}"$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              additionalProperties: false
+              properties:
+                source:
+                  type: string
+                  minLength: 1
+                  maxLength: 2097152
+      responses:
+        "200":
+          description: Source already matched the current revision
+          headers:
+            ETag:
+              $ref: "#/components/headers/RevisionEtag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactEnvelope"
+        "201":
+          description: New immutable revision created and made the draft head
+          headers:
+            ETag:
+              $ref: "#/components/headers/RevisionEtag"
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/PermissionDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The base revision is stale
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorEnvelope"
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          currentRevision:
+                            $ref: "#/components/schemas/ArtifactRevision"
+        "422":
+          $ref: "#/components/responses/InvalidBpmn"
+  /artifacts/{artifactId}/presence:
+    get:
+      operationId: listArtifactPresence
+      tags: [Artifacts]
+      summary: List active editors and their revision awareness
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Recently active editors for this artifact
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ArtifactEditorPresence" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: touchArtifactPresence
+      tags: [Artifacts]
+      summary: Join or refresh an artifact editing session
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArtifactPresenceInput" }
+      responses:
+        "200":
+          description: Current editor presence
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ArtifactEditorPresence" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ResourceConflict" }
+    delete:
+      operationId: leaveArtifactPresence
+      tags: [Artifacts]
+      summary: Leave an artifact editing session
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: clientId
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 120, pattern: '^[A-Za-z0-9_-]+$' }
+      responses:
+        "204": { description: Editor presence removed }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /artifacts/{artifactId}/simulate:
+    post:
+      operationId: simulateArtifactDraft
+      tags: [Artifacts]
+      summary: Walk through the current saved BPMN draft without starting a durable instance
+      description: |
+        Simulation always reloads the named immutable draft revision and its
+        current saved DMN dependencies. It does not create a deployment,
+        instance, task assignment, runtime checkpoint, or Operations history.
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DraftSimulationInput" }
+      responses:
+        "200":
+          description: Ephemeral trace and the next controlled wait, if any
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/DraftSimulationResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ResourceConflict" }
+        "422": { $ref: "#/components/responses/InvalidBpmn" }
+  /artifacts/{artifactId}/reviewers:
+    get:
+      operationId: listReviewerCandidates
+      tags: [Reviews]
+      summary: List eligible independent reviewers for an artifact
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Reviewer candidates with separation-of-duty eligibility
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReviewerCandidate" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /artifacts/{artifactId}/reviews:
+    post:
+      operationId: createReview
+      tags: [Reviews]
+      summary: Pin the current revision and request independent review
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revisionId, reviewerIds]
+              additionalProperties: false
+              properties:
+                revisionId: { type: string, format: uuid }
+                reviewerIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
+                summary: { type: string, maxLength: 2000, default: "" }
+      responses:
+        "201":
+          description: Open review pinned to the requested immutable revision
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewEnvelope" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ReviewConflict" }
+  /reviews:
+    get:
+      operationId: listReviews
+      tags: [Reviews]
+      summary: List reviews visible to the current principal
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Review queue ordered newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReviewListItem" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+  /reviews/{reviewId}:
+    get:
+      operationId: getReview
+      tags: [Reviews]
+      summary: Get a pinned review, discussion, decision, and activity
+      parameters:
+        - $ref: "#/components/parameters/ReviewId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Full review detail personalized with current capabilities
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reviews/{reviewId}/comments:
+    post:
+      operationId: addReviewComment
+      tags: [Reviews]
+      summary: Add a comment anchored to an element in the pinned BPMN revision
+      parameters:
+        - $ref: "#/components/parameters/ReviewId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [elementId, body]
+              additionalProperties: false
+              properties:
+                elementId: { type: string, minLength: 1, maxLength: 255 }
+                body: { type: string, minLength: 1, maxLength: 4000 }
+                mentionedPrincipalIds:
+                  type: array
+                  maxItems: 20
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Comment added and review detail refreshed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewEnvelope" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ReviewConflict" }
+  /reviews/{reviewId}/comments/{commentId}/resolve:
+    post:
+      operationId: resolveReviewComment
+      tags: [Reviews]
+      summary: Resolve an open review comment
+      parameters:
+        - $ref: "#/components/parameters/ReviewId"
+        - $ref: "#/components/parameters/CommentId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Comment resolved and review detail refreshed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ReviewConflict" }
+  /reviews/{reviewId}/decision:
+    post:
+      operationId: decideReview
+      tags: [Reviews]
+      summary: Approve the pinned revision or request changes
+      parameters:
+        - $ref: "#/components/parameters/ReviewId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              additionalProperties: false
+              properties:
+                outcome: { $ref: "#/components/schemas/ReviewOutcome" }
+                note: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        "200":
+          description: Immutable terminal decision recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewEnvelope" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ReviewConflict" }
+  /reviews/{reviewId}/cancel:
+    post:
+      operationId: cancelReview
+      tags: [Reviews]
+      summary: Cancel an open review as its requester or administrator
+      parameters:
+        - $ref: "#/components/parameters/ReviewId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Review cancelled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ReviewConflict" }
+  /reviews/{reviewId}/publish:
+    post:
+      operationId: publishReview
+      tags: [Publications]
+      summary: Create the immutable Publication for an approved review
+      parameters:
+        - $ref: "#/components/parameters/ReviewId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "201":
+          description: Publication and root artifact version created, or the idempotent result returned
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicationEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/PublicationConflict" }
+  /publications/{publicationId}:
+    get:
+      operationId: getPublication
+      tags: [Publications]
+      summary: Get an immutable Publication, artifact versions, and deployments
+      parameters:
+        - $ref: "#/components/parameters/PublicationId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Publication with approval and validation snapshots
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicationEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /projects/{projectId}/environments:
+    get:
+      operationId: listProjectEnvironments
+      tags: [Environments]
+      summary: List authorized project environments and latest deployments
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Project environments in release-flow order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Environment" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: createEnvironment
+      tags: [Environments]
+      summary: Create a named project environment
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, name]
+              additionalProperties: false
+              properties:
+                key: { $ref: "#/components/schemas/StableKey" }
+                name: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        "201":
+          description: Environment created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Environment" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ResourceConflict" }
+  /environments/{environmentId}/deploy:
+    post:
+      operationId: deployPublication
+      tags: [Deployments]
+      summary: Bind an immutable Publication to an environment
+      parameters:
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicationId]
+              additionalProperties: false
+              properties:
+                publicationId: { type: string, format: uuid }
+                note: { type: string, maxLength: 2000, default: "" }
+      responses:
+        "201":
+          description: New immutable Deployment created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentEnvelope" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/PublicationConflict" }
+  /deployments/{deploymentId}:
+    get:
+      operationId: getDeployment
+      tags: [Deployments]
+      summary: Get an immutable Deployment record
+      parameters:
+        - $ref: "#/components/parameters/DeploymentId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Immutable environment binding and bundle hashes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /decision-evaluations:
+    get:
+      operationId: listDecisionEvaluations
+      tags: [Decisions]
+      summary: List durable decision evidence
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: deploymentId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: instanceId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Newest evaluation evidence first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DecisionEvaluation" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+    post:
+      operationId: evaluateDecision
+      tags: [Decisions]
+      summary: Evaluate a DMN table pinned in an immutable Deployment
+      description: The stable decision key resolves only inside the Deployment's Publication. The result stores inputs, outputs, rule IDs, and the exact artifact version.
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateDecision" }
+      responses:
+        "201":
+          description: Evaluation completed and evidence persisted
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/DecisionEvaluation" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+        "422": { $ref: "#/components/responses/InvalidBpmn" }
+  /decision-evaluations/{evaluationId}:
+    get:
+      operationId: getDecisionEvaluation
+      tags: [Decisions]
+      summary: Get one immutable decision-evaluation record
+      parameters:
+        - $ref: "#/components/parameters/EvaluationId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Durable decision evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/DecisionEvaluation" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /process-instances:
+    get:
+      operationId: listProcessInstances
+      tags: [Runtime]
+      summary: List authorized durable process instances
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Instances ordered by latest runtime activity
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ProcessInstanceSummary" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+    post:
+      operationId: startProcessInstance
+      tags: [Runtime]
+      summary: Accept a start command for an immutable Deployment
+      description: |
+        Starts only by Deployment ID—never draft source or Publication ID.
+        A separate worker incorporates the accepted command at checkpoint 1.
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartProcessInstance" }
+      responses:
+        "202":
+          description: Start command accepted as durable work
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProcessInstanceEnvelope" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+        "422": { $ref: "#/components/responses/InvalidBpmn" }
+  /process-instances/{instanceId}:
+    get:
+      operationId: getProcessInstance
+      tags: [Runtime]
+      summary: Get current projections and committed instance timeline
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Current checkpoint, variables, events, and incidents
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProcessInstanceEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /tasks:
+    get:
+      operationId: listMyTasks
+      tags: [Tasks]
+      summary: List open BPMN user tasks assigned to the current principal
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Assigned work with accepted-command overlays
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ProcessTask" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+  /tasks/{taskId}:
+    get:
+      operationId: getProcessTask
+      tags: [Tasks]
+      summary: Get an assigned BPMN user task
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Task and current instance variables
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ProcessTask" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /tasks/{taskId}/complete:
+    post:
+      operationId: completeProcessTask
+      tags: [Tasks]
+      summary: Accept a task-completion command
+      description: |
+        Acceptance leaves the checkpoint-N task row OPEN. Reads expose
+        completionPending until the worker commits checkpoint N+1.
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/OrganizationContext"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompleteProcessTask" }
+      responses:
+        "202":
+          description: Completion command accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [accepted, commandId, task]
+                    properties:
+                      accepted: { type: boolean, const: true }
+                      commandId: { type: string, format: uuid }
+                      task: { $ref: "#/components/schemas/ProcessTask" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /tasks/{taskId}/claim:
+    post:
+      operationId: claimProcessTask
+      tags: [Tasks]
+      summary: Atomically claim work from one of the current principal's team queues
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Claimed task with assignment history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ProcessTask" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /tasks/{taskId}/assignment:
+    get:
+      operationId: listTaskAssigneeCandidates
+      tags: [Tasks]
+      summary: List people who can receive an active human task
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Eligible organization members
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/TaskAssigneeCandidate" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProcessTaskAssignment
+      tags: [Tasks]
+      summary: Hand off a human task and optionally set its priority and due date
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProcessTaskAssignment" }
+      responses:
+        "200":
+          description: Updated task with durable assignment history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ProcessTask" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /process-instances/{instanceId}/cancel:
+    post:
+      operationId: cancelProcessInstance
+      tags: [Runtime]
+      summary: Atomically cancel a checkpointed instance
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: [string, "null"], maxLength: 1000 }
+      responses:
+        "200":
+          description: Instance cancelled, or its existing cancelled representation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProcessInstanceEnvelope" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /worker-credentials:
+    get:
+      operationId: listWorkerCredentials
+      tags: [Worker Credentials]
+      summary: List project-scoped external-worker credentials
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: projectId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Credentials; secret material is never returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/WorkerCredential" } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+    post:
+      operationId: createWorkerCredential
+      tags: [Worker Credentials]
+      summary: Create a worker credential and reveal its token once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, name]
+              additionalProperties: false
+              properties:
+                projectId: { type: string, format: uuid }
+                name: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        "201":
+          description: Credential created; token is shown only in this response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - { $ref: "#/components/schemas/WorkerCredential" }
+                      - type: object
+                        required: [token]
+                        properties: { token: { type: string } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+  /worker-credentials/{credentialId}/revoke:
+    post:
+      operationId: revokeWorkerCredential
+      tags: [Worker Credentials]
+      summary: Revoke a worker credential
+      parameters:
+        - $ref: "#/components/parameters/CredentialId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Credential revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { $ref: "#/components/schemas/WorkerCredential" } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /external-jobs:
+    get:
+      operationId: listExternalJobs
+      tags: [External Jobs]
+      summary: Inspect external jobs and delivery history
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: instanceId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [WAITING, COMPLETED, CANCELLED] }
+      responses:
+        "200":
+          description: Authorized jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { type: array, items: { $ref: "#/components/schemas/ExternalJob" } } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+  /external-jobs/{jobId}:
+    get:
+      operationId: getExternalJob
+      tags: [External Jobs]
+      summary: Inspect one external job
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: External job
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { $ref: "#/components/schemas/ExternalJob" } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /external-jobs/lock:
+    post:
+      operationId: lockExternalJobs
+      tags: [External Jobs]
+      summary: Lock available jobs for a project-scoped worker
+      security: [{ JobWorkerBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workerId, jobTypes]
+              additionalProperties: false
+              properties:
+                workerId: { type: string, minLength: 1, maxLength: 255 }
+                jobTypes: { type: array, minItems: 1, maxItems: 50, items: { type: string } }
+                maxJobs: { type: integer, minimum: 1, maximum: 20, default: 1 }
+      responses:
+        "200":
+          description: Locked deliveries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { type: array, items: { $ref: "#/components/schemas/LockedExternalJob" } } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /external-jobs/{jobId}/heartbeat:
+    post:
+      operationId: heartbeatExternalJob
+      tags: [External Jobs]
+      summary: Renew a job lease and rotate its fencing token
+      security: [{ JobWorkerBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/JobLeaseCommand" } } }
+      responses:
+        "200": { description: Lease renewed }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /external-jobs/{jobId}/complete:
+    post:
+      operationId: completeExternalJob
+      tags: [External Jobs]
+      summary: Accept a fenced external-job completion
+      security: [{ JobWorkerBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/JobLeaseCommand" }
+                - type: object
+                  properties: { result: { type: object, additionalProperties: true }, idempotencyKey: { type: [string, "null"] } }
+      responses:
+        "202": { description: Completion command accepted }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /external-jobs/{jobId}/fail:
+    post:
+      operationId: failExternalJob
+      tags: [External Jobs]
+      summary: Report a fenced failure and schedule retry or incident
+      security: [{ JobWorkerBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/JobLeaseCommand" }
+                - type: object
+                  required: [code, message]
+                  properties:
+                    code: { type: string, minLength: 1, maxLength: 120 }
+                    message: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        "200": { description: Retry scheduled or incident opened }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /external-jobs/{jobId}/retry:
+    post:
+      operationId: retryExternalJob
+      tags: [External Jobs]
+      summary: Start a fresh operator retry cycle after exhaustion
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200": { description: Fresh retry cycle created }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RuntimeConflict" }
+  /timers:
+    get:
+      operationId: listProcessTimers
+      tags: [Timers]
+      summary: Inspect PostgreSQL-owned timer waits
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: instanceId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [WAITING, FIRED, CANCELLED] }
+      responses:
+        "200":
+          description: Authorized durable timers with accepted-fire overlays
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { type: array, items: { $ref: "#/components/schemas/ProcessTimer" } } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+  /timers/{timerId}:
+    get:
+      operationId: getProcessTimer
+      tags: [Timers]
+      summary: Inspect one durable timer
+      parameters:
+        - $ref: "#/components/parameters/TimerId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Durable timer and current firing overlay
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { $ref: "#/components/schemas/ProcessTimer" } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /message-subscriptions:
+    get:
+      operationId: listMessageSubscriptions
+      tags: [Messages]
+      summary: Inspect durable message-catch subscriptions
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: instanceId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [WAITING, CONSUMED, CANCELLED] }
+      responses:
+        "200":
+          description: Authorized subscriptions with accepted-correlation overlays
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { type: array, items: { $ref: "#/components/schemas/MessageSubscription" } } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+  /message-subscriptions/{subscriptionId}:
+    get:
+      operationId: getMessageSubscription
+      tags: [Messages]
+      summary: Inspect one durable message subscription
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Durable subscription and current correlation overlay
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { $ref: "#/components/schemas/MessageSubscription" } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /message-deliveries:
+    get:
+      operationId: listMessageDeliveries
+      tags: [Messages]
+      summary: Inspect durable outbound message deliveries
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - name: instanceId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [AVAILABLE, CLAIMED, DELIVERED, NO_MATCH, AMBIGUOUS] }
+      responses:
+        "200":
+          description: Checkpoint-owned deliveries with their current dispatch overlay
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { type: array, items: { $ref: "#/components/schemas/MessageDelivery" } } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+  /message-deliveries/{deliveryId}:
+    get:
+      operationId: getMessageDelivery
+      tags: [Messages]
+      summary: Inspect one outbound message delivery
+      parameters:
+        - $ref: "#/components/parameters/DeliveryId"
+        - $ref: "#/components/parameters/OrganizationContext"
+      responses:
+        "200":
+          description: Durable delivery intent and current dispatch outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties: { data: { $ref: "#/components/schemas/MessageDelivery" } }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /messages/correlate:
+    post:
+      operationId: correlateMessage
+      tags: [Messages]
+      summary: Correlate one message to exactly one waiting subscription
+      parameters:
+        - $ref: "#/components/parameters/OrganizationContext"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrelateMessage" }
+      responses:
+        "200":
+          description: No subscription matched; the idempotent attempt is durably recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageCorrelationEnvelope" }
+        "202":
+          description: Exactly one subscription matched and continuation was accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageCorrelationEnvelope" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/AuthenticationRequired" }
+        "403": { $ref: "#/components/responses/PermissionDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Ambiguous match or idempotency conflict; no subscription is consumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: wanaflow.session_token
+      description: PostgreSQL-backed Better Auth browser session cookie
+    JobWorkerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Wanaflow project worker token
+  parameters:
+    OrganizationContext:
+      name: X-Wanaflow-Organization
+      in: header
+      required: false
+      description: Required when the authenticated principal belongs to multiple organizations
+      schema: { type: string, format: uuid }
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReviewId:
+      name: reviewId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PublicationId:
+      name: publicationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EnvironmentId:
+      name: environmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DeploymentId:
+      name: deploymentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EvaluationId:
+      name: evaluationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    InstanceId:
+      name: instanceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TimerId:
+      name: timerId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SubscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CredentialId:
+      name: credentialId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Organization-scoped key for safely retrying command acceptance
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    RequiredIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Organization-scoped key; no-match and ambiguous outcomes are replayed unchanged
+      schema: { type: string, minLength: 1, maxLength: 255 }
+  headers:
+    RequestId:
+      description: Per-response support correlation ID
+      schema: { type: string, format: uuid }
+    AuthMode:
+      description: Identity mode used for this response
+      schema: { type: string, enum: [session-cookie, worker-bearer] }
+    RevisionEtag:
+      description: Quoted UUID of the current immutable revision
+      schema:
+        type: string
+        pattern: '^"[0-9a-fA-F-]{36}"$'
+  schemas:
+    StableKey:
+      type: string
+      minLength: 2
+      maxLength: 63
+      pattern: '^[a-z][a-z0-9-]+$'
+    MembershipRole:
+      type: string
+      enum: [organization-owner, workspace-admin, designer, reviewer, operator, task-worker]
+    Permission:
+      type: string
+      enum:
+        - project:read
+        - project:create
+        - artifact:read
+        - artifact:create
+        - artifact:update
+        - review:read
+        - review:create
+        - review:comment
+        - review:decide
+        - review:cancel
+        - publication:read
+        - publication:create
+        - environment:read
+        - environment:create
+        - deployment:read
+        - deployment:create
+        - instance:read
+        - instance:start
+        - instance:cancel
+        - task:read
+        - task:complete
+        - task:assign
+        - membership:manage
+        - notification:read
+        - job:read
+        - job:retry
+        - timer:read
+        - message:read
+        - message:correlate
+        - decision:read
+        - decision:evaluate
+        - worker-credential:read
+        - worker-credential:create
+        - worker-credential:revoke
+    Organization:
+      type: object
+      required: [id, key, name]
+      properties:
+        id: { type: string, format: uuid }
+        key: { $ref: "#/components/schemas/StableKey" }
+        name: { type: string }
+    Workspace:
+      type: object
+      required: [id, organizationId, key, name]
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        key: { $ref: "#/components/schemas/StableKey" }
+        name: { type: string }
+    Project:
+      type: object
+      required: [id, organizationId, workspaceId, key, name]
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        key: { $ref: "#/components/schemas/StableKey" }
+        name: { type: string }
+    ProjectPackage:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, exportedAt, project, artifacts]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        exportedAt: { type: string, format: date-time }
+        project:
+          type: object
+          additionalProperties: false
+          required: [key, name]
+          properties:
+            key: { $ref: "#/components/schemas/StableKey" }
+            name: { type: string, minLength: 1, maxLength: 120 }
+        artifacts:
+          type: array
+          maxItems: 250
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, name, type, source, contentSha256]
+            properties:
+              key: { $ref: "#/components/schemas/StableKey" }
+              name: { type: string, minLength: 1, maxLength: 160 }
+              type: { type: string, enum: [BPMN_PROCESS, DMN_DECISION, FORM] }
+              source: { type: string, minLength: 1, maxLength: 2097152 }
+              contentSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+    Principal:
+      type: object
+      required: [id, organizationId, email, displayName]
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+    ValidationIssue:
+      type: object
+      required: [code, severity, message]
+      properties:
+        code: { type: string }
+        severity: { type: string, enum: [ERROR, WARNING] }
+        message: { type: string }
+        elementId: { type: string }
+    BpmnValidation:
+      type: object
+      required: [status, profile, issues]
+      properties:
+        status: { type: string, enum: [VALID, INVALID] }
+        profile: { type: string, const: "wanaflow-bpmn-mvp@1" }
+        issues:
+          type: array
+          items: { $ref: "#/components/schemas/ValidationIssue" }
+    FormValidation:
+      type: object
+      required: [status, profile, issues]
+      properties:
+        status: { type: string, enum: [VALID, INVALID] }
+        profile: { type: string, const: "wanaflow-form@1" }
+        issues:
+          type: array
+          items: { $ref: "#/components/schemas/ValidationIssue" }
+    DmnValidation:
+      type: object
+      required: [status, profile, decision, issues]
+      properties:
+        status: { type: string, enum: [VALID, INVALID] }
+        profile: { type: string, const: "wanaflow-dmn-table@1" }
+        decision:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - { type: "null" }
+        issues:
+          type: array
+          items: { $ref: "#/components/schemas/ValidationIssue" }
+    ArtifactRevision:
+      type: object
+      required: [id, artifactId, number, source, contentSha256, validation, createdAt, createdBy]
+      properties:
+        id: { type: string, format: uuid }
+        artifactId: { type: string, format: uuid }
+        number: { type: integer, minimum: 1 }
+        source: { type: string }
+        contentSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        validation:
+          oneOf:
+            - { $ref: "#/components/schemas/BpmnValidation" }
+            - { $ref: "#/components/schemas/DmnValidation" }
+            - { $ref: "#/components/schemas/FormValidation" }
+        createdAt: { type: string, format: date-time }
+        createdBy:
+          type: object
+          required: [id, displayName]
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+    Artifact:
+      type: object
+      required: [id, organizationId, projectId, key, name, type, revision, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        key: { $ref: "#/components/schemas/StableKey" }
+        name: { type: string }
+        type: { type: string, enum: [BPMN_PROCESS, DMN_DECISION, FORM] }
+        revision: { $ref: "#/components/schemas/ArtifactRevision" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ArtifactPresenceInput:
+      type: object
+      required: [revisionId, clientId]
+      additionalProperties: false
+      properties:
+        revisionId: { type: string, format: uuid }
+        clientId: { type: string, minLength: 8, maxLength: 120, pattern: '^[A-Za-z0-9_-]+$' }
+        selectedElementId:
+          oneOf:
+            - { type: string, minLength: 1, maxLength: 255 }
+            - { type: "null" }
+        state: { type: string, enum: [ACTIVE, IDLE], default: ACTIVE }
+    ArtifactEditorPresence:
+      type: object
+      required: [id, artifactId, revisionId, clientId, principal, selectedElement, state, isCurrentRevision, lastSeenAt]
+      properties:
+        id: { type: string, format: uuid }
+        artifactId: { type: string, format: uuid }
+        revisionId: { type: string, format: uuid }
+        clientId: { type: string }
+        principal: { $ref: "#/components/schemas/ReviewPrincipal" }
+        selectedElement:
+          oneOf:
+            - { $ref: "#/components/schemas/BpmnElementReference" }
+            - { type: "null" }
+        state: { type: string, enum: [ACTIVE, IDLE] }
+        isCurrentRevision: { type: boolean }
+        lastSeenAt: { type: string, format: date-time }
+    DraftSimulationInput:
+      type: object
+      required: [revisionId]
+      additionalProperties: false
+      properties:
+        revisionId: { type: string, format: uuid }
+        variables: { type: object, additionalProperties: true }
+        envelope:
+          description: Opaque adapter envelope returned by the preceding simulation step
+        signal:
+          type: object
+          required: [executionId]
+          additionalProperties: false
+          properties:
+            executionId: { type: string, minLength: 1, maxLength: 255 }
+            output: { type: object, additionalProperties: true }
+    DraftSimulationResult:
+      type: object
+      required: [status, revisionId, sourceSha256, envelope, waits, events, decisionEvaluations, variables]
+      properties:
+        status: { type: string, enum: [WAITING, COMPLETED] }
+        revisionId: { type: string, format: uuid }
+        sourceSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        envelope:
+          description: Opaque adapter envelope accepted only with a signal in the next simulation step
+        waits:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        decisionEvaluations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        variables: { type: object, additionalProperties: true }
+    ProjectLibrary:
+      allOf:
+        - $ref: "#/components/schemas/Project"
+        - type: object
+          required: [artifacts]
+          properties:
+            artifacts:
+              type: array
+              items: { $ref: "#/components/schemas/Artifact" }
+    WorkspaceLibrary:
+      allOf:
+        - $ref: "#/components/schemas/Workspace"
+        - type: object
+          required: [projects]
+          properties:
+            projects:
+              type: array
+              items: { $ref: "#/components/schemas/ProjectLibrary" }
+    OrganizationLibrary:
+      type: object
+      required: [organization, principal, role, workspaceScopeId, permissions, workspaces]
+      properties:
+        organization: { $ref: "#/components/schemas/Organization" }
+        principal: { $ref: "#/components/schemas/Principal" }
+        role: { $ref: "#/components/schemas/MembershipRole" }
+        workspaceScopeId:
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: "null" }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
+        workspaces:
+          type: array
+          items: { $ref: "#/components/schemas/WorkspaceLibrary" }
+    CreateProject:
+      type: object
+      required: [key, name]
+      additionalProperties: false
+      properties:
+        key: { $ref: "#/components/schemas/StableKey" }
+        name: { type: string, minLength: 1, maxLength: 120 }
+    CreateArtifact:
+      type: object
+      required: [key, name, type, source]
+      additionalProperties: false
+      properties:
+        key: { $ref: "#/components/schemas/StableKey" }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        type: { type: string, enum: [BPMN_PROCESS, DMN_DECISION, FORM] }
+        source: { type: string, minLength: 1, maxLength: 2097152 }
+    ReviewStatus:
+      type: string
+      enum: [OPEN, APPROVED, CHANGES_REQUESTED, CANCELLED]
+    ReviewOutcome:
+      type: string
+      enum: [APPROVED, CHANGES_REQUESTED]
+    ReviewPrincipal:
+      type: object
+      required: [id, displayName, email]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: string, format: email }
+    ReviewerCandidate:
+      allOf:
+        - $ref: "#/components/schemas/ReviewPrincipal"
+        - type: object
+          required: [role, eligible, ineligibleReason]
+          properties:
+            role:
+              type: string
+              enum: [organization-owner, workspace-admin, reviewer]
+            eligible: { type: boolean }
+            ineligibleReason:
+              oneOf:
+                - { type: string }
+                - { type: "null" }
+    ReviewAssignment:
+      type: object
+      required: [id, reviewer, assignedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        reviewer: { $ref: "#/components/schemas/ReviewPrincipal" }
+        assignedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+        createdAt: { type: string, format: date-time }
+    ReviewComment:
+      type: object
+      required: [id, elementId, elementName, body, author, createdAt, resolvedAt, resolvedBy, mentions]
+      properties:
+        id: { type: string, format: uuid }
+        elementId: { type: string }
+        elementName: { type: string }
+        body: { type: string }
+        author: { $ref: "#/components/schemas/ReviewPrincipal" }
+        createdAt: { type: string, format: date-time }
+        resolvedAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+        resolvedBy:
+          oneOf:
+            - { $ref: "#/components/schemas/ReviewPrincipal" }
+            - { type: "null" }
+        mentions:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewPrincipal" }
+    ReviewChangeSummary:
+      type: object
+      required: [previousRevisionNumber, sourceChanged, addedElements, removedElements]
+      properties:
+        previousRevisionNumber:
+          oneOf:
+            - { type: integer, minimum: 1 }
+            - { type: "null" }
+        sourceChanged: { type: boolean }
+        addedElements:
+          type: array
+          items: { $ref: "#/components/schemas/BpmnElementReference" }
+        removedElements:
+          type: array
+          items: { $ref: "#/components/schemas/BpmnElementReference" }
+    ReviewDecision:
+      type: object
+      required: [id, outcome, note, decidedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        outcome: { $ref: "#/components/schemas/ReviewOutcome" }
+        note:
+          oneOf:
+            - { type: string }
+            - { type: "null" }
+        decidedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+        createdAt: { type: string, format: date-time }
+    ReviewActivity:
+      type: object
+      required: [id, action, actor, details, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string }
+        actor: { $ref: "#/components/schemas/ReviewPrincipal" }
+        details: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    PublicationSummary:
+      type: object
+      required: [id, reviewId, artifactVersion, manifestSha256, publishedBy, deploymentCount, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        reviewId: { type: string, format: uuid }
+        artifactVersion: { type: integer, minimum: 1 }
+        manifestSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        publishedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+        deploymentCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+    ArtifactVersion:
+      type: object
+      required: [id, artifact, revisionId, revisionNumber, version, contentSha256, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        artifact:
+          type: object
+          required: [id, key, name, type]
+          properties:
+            id: { type: string, format: uuid }
+            key: { $ref: "#/components/schemas/StableKey" }
+            name: { type: string }
+            type: { type: string, enum: [BPMN_PROCESS, FORM] }
+        revisionId: { type: string, format: uuid }
+        revisionNumber: { type: integer, minimum: 1 }
+        version: { type: integer, minimum: 1 }
+        contentSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        createdAt: { type: string, format: date-time }
+    Deployment:
+      type: object
+      required: [id, publicationId, environmentId, environmentKey, sequence, contentSha256, bundleSha256, note, deployedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        publicationId: { type: string, format: uuid }
+        environmentId: { type: string, format: uuid }
+        environmentKey: { $ref: "#/components/schemas/StableKey" }
+        sequence: { type: integer, minimum: 1 }
+        contentSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        bundleSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        note: { type: string }
+        deployedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+        createdAt: { type: string, format: date-time }
+    Environment:
+      type: object
+      required: [id, organizationId, projectId, key, name, deploymentCount, latestDeployment, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        key: { $ref: "#/components/schemas/StableKey" }
+        name: { type: string }
+        deploymentCount: { type: integer, minimum: 0 }
+        latestDeployment:
+          oneOf:
+            - { $ref: "#/components/schemas/Deployment" }
+            - { type: "null" }
+        createdAt: { type: string, format: date-time }
+    Publication:
+      allOf:
+        - { $ref: "#/components/schemas/PublicationSummary" }
+        - type: object
+          required: [organizationId, projectId, manifest, validationSnapshot, approvalSnapshot, artifactVersions, deployments]
+          properties:
+            organizationId: { type: string, format: uuid }
+            projectId: { type: string, format: uuid }
+            manifest:
+              type: object
+              required: [schemaVersion, artifacts]
+              properties:
+                schemaVersion: { type: integer, const: 1 }
+                artifacts:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [artifactId, revisionId, key, type, version, contentSha256]
+                    properties:
+                      artifactId: { type: string, format: uuid }
+                      revisionId: { type: string, format: uuid }
+                      key: { $ref: "#/components/schemas/StableKey" }
+                      type: { type: string, enum: [BPMN_PROCESS, FORM] }
+                      version: { type: integer, minimum: 1 }
+                      contentSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+            validationSnapshot: { $ref: "#/components/schemas/BpmnValidation" }
+            approvalSnapshot:
+              type: object
+              required: [reviewId, decisionId, outcome, decidedBy, decidedAt, note]
+              properties:
+                reviewId: { type: string, format: uuid }
+                decisionId: { type: string, format: uuid }
+                outcome: { type: string, const: APPROVED }
+                decidedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+                decidedAt: { type: string, format: date-time }
+                note:
+                  oneOf:
+                    - { type: string }
+                    - { type: "null" }
+            artifactVersions:
+              type: array
+              minItems: 1
+              items: { $ref: "#/components/schemas/ArtifactVersion" }
+            deployments:
+              type: array
+              items: { $ref: "#/components/schemas/Deployment" }
+    ReviewCapabilities:
+      type: object
+      required: [canComment, canDecide, canCancel, canPublish, canDeploy, decisionBlockedReason]
+      properties:
+        canComment: { type: boolean }
+        canDecide: { type: boolean }
+        canCancel: { type: boolean }
+        canPublish: { type: boolean }
+        canDeploy: { type: boolean }
+        decisionBlockedReason:
+          oneOf:
+            - { type: string }
+            - { type: "null" }
+    BpmnElementReference:
+      type: object
+      required: [id, name, type]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+    Review:
+      type: object
+      required:
+        - id
+        - organizationId
+        - projectId
+        - artifact
+        - revision
+        - dependencies
+        - status
+        - summary
+        - requestedBy
+        - assignments
+        - comments
+        - decision
+        - activity
+        - publicationEligible
+        - publication
+        - capabilities
+        - elements
+        - changes
+        - createdAt
+        - decidedAt
+        - cancelledAt
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        artifact:
+          type: object
+          required: [id, key, name, type]
+          properties:
+            id: { type: string, format: uuid }
+            key: { $ref: "#/components/schemas/StableKey" }
+            name: { type: string }
+            type: { type: string, enum: [BPMN_PROCESS, DMN_DECISION, FORM] }
+        revision: { $ref: "#/components/schemas/ArtifactRevision" }
+        dependencies:
+          type: array
+          items:
+            type: object
+            required: [artifact, revisionId, revisionNumber, contentSha256]
+            properties:
+              artifact:
+                type: object
+                required: [id, key, name, type]
+                properties:
+                  id: { type: string, format: uuid }
+                  key: { $ref: "#/components/schemas/StableKey" }
+                  name: { type: string }
+                  type: { type: string, const: FORM }
+              revisionId: { type: string, format: uuid }
+              revisionNumber: { type: integer, minimum: 1 }
+              contentSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        status: { $ref: "#/components/schemas/ReviewStatus" }
+        summary: { type: string }
+        requestedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+        assignments:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewAssignment" }
+        comments:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewComment" }
+        decision:
+          oneOf:
+            - { $ref: "#/components/schemas/ReviewDecision" }
+            - { type: "null" }
+        activity:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewActivity" }
+        publicationEligible: { type: boolean }
+        publication:
+          oneOf:
+            - { $ref: "#/components/schemas/PublicationSummary" }
+            - { type: "null" }
+        capabilities: { $ref: "#/components/schemas/ReviewCapabilities" }
+        elements:
+          type: array
+          items: { $ref: "#/components/schemas/BpmnElementReference" }
+        changes: { $ref: "#/components/schemas/ReviewChangeSummary" }
+        createdAt: { type: string, format: date-time }
+        decidedAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+        cancelledAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+    ReviewListItem:
+      type: object
+      description: Review detail without comments, activity, or element catalog
+      required: [id, artifact, revision, status, assignments, commentCount, unresolvedCommentCount, publicationEligible, publication, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        artifact:
+          type: object
+          additionalProperties: true
+        revision: { $ref: "#/components/schemas/ArtifactRevision" }
+        status: { $ref: "#/components/schemas/ReviewStatus" }
+        assignments:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewAssignment" }
+        commentCount: { type: integer, minimum: 0 }
+        unresolvedCommentCount: { type: integer, minimum: 0 }
+        publicationEligible: { type: boolean }
+        publication:
+          oneOf:
+            - { $ref: "#/components/schemas/PublicationSummary" }
+            - { type: "null" }
+        createdAt: { type: string, format: date-time }
+      additionalProperties: true
+    ReviewEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Review" }
+    PublicationEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Publication" }
+    DeploymentEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Deployment" }
+    ProcessInstanceStatus:
+      type: string
+      enum: [STARTING, RUNNING, WAITING, COMPLETED, INCIDENT, CANCELLED]
+    WorkerCredential:
+      type: object
+      required: [id, projectId, name, tokenPrefix, createdAt, lastUsedAt, revokedAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        name: { type: string }
+        tokenPrefix: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: [string, "null"], format: date-time }
+        revokedAt: { type: [string, "null"], format: date-time }
+    JobLeaseCommand:
+      type: object
+      required: [deliveryId, workerId, fencingToken]
+      properties:
+        deliveryId: { type: string, format: uuid }
+        workerId: { type: string, minLength: 1, maxLength: 255 }
+        fencingToken: { type: integer, minimum: 1 }
+    ExternalJobDelivery:
+      type: object
+      required: [id, attempt, retryCycle, cycleAttempt, status, availableAt, workerId, fencingToken, lockExpiresAt, failure, createdAt, finishedAt]
+      properties:
+        id: { type: string, format: uuid }
+        attempt: { type: integer, minimum: 1 }
+        retryCycle: { type: integer, minimum: 1 }
+        cycleAttempt: { type: integer, minimum: 1 }
+        status: { type: string, enum: [AVAILABLE, LOCKED, FAILED, SUCCEEDED, SUPERSEDED] }
+        availableAt: { type: string, format: date-time }
+        workerId: { type: [string, "null"] }
+        fencingToken: { type: integer, minimum: 0 }
+        lockExpiresAt: { type: [string, "null"], format: date-time }
+        failure:
+          oneOf:
+            - type: object
+              required: [code, message]
+              properties: { code: { type: string }, message: { type: string } }
+            - { type: "null" }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+    ExternalJob:
+      type: object
+      required: [id, instanceId, processName, businessKey, checkpointRevision, elementId, elementName, jobType, input, headers, effectKey, status, completionPending, maxAttempts, retryBackoffSeconds, deliveries, createdAt, completedAt]
+      properties:
+        id: { type: string, format: uuid }
+        instanceId: { type: string, format: uuid }
+        processName: { type: string }
+        businessKey: { type: [string, "null"] }
+        checkpointRevision: { type: integer, minimum: 1 }
+        elementId: { type: string }
+        elementName: { type: string }
+        jobType: { type: string }
+        input: { type: object, additionalProperties: true }
+        headers: { type: object, additionalProperties: true }
+        effectKey: { type: string, pattern: '^[a-f0-9]{64}$' }
+        status: { type: string, enum: [WAITING, COMPLETED, CANCELLED] }
+        completionPending: { type: boolean }
+        maxAttempts: { type: integer, minimum: 1, maximum: 20 }
+        retryBackoffSeconds: { type: integer, minimum: 1 }
+        deliveries: { type: array, items: { $ref: "#/components/schemas/ExternalJobDelivery" } }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    ProcessTimer:
+      type: object
+      required: [id, instanceId, processName, businessKey, checkpointRevision, elementId, elementName, timerType, expression, durationMilliseconds, dueAt, status, completionPending, createdAt, firedAt]
+      properties:
+        id: { type: string, format: uuid }
+        instanceId: { type: string, format: uuid }
+        processName: { type: string }
+        businessKey: { type: [string, "null"] }
+        checkpointRevision: { type: integer, minimum: 1 }
+        elementId: { type: string }
+        elementName: { type: string }
+        timerType: { type: string, enum: [DURATION, DATE] }
+        expression: { type: string, examples: [PT15M, "2030-06-02T08:30:00Z"] }
+        durationMilliseconds: { type: [integer, "null"], minimum: 0, maximum: 315360000000 }
+        dueAt: { type: string, format: date-time }
+        status: { type: string, enum: [WAITING, FIRED, CANCELLED] }
+        completionPending: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        firedAt: { type: [string, "null"], format: date-time }
+    MessageSubscription:
+      type: object
+      required: [id, instanceId, processName, businessKey, environment, checkpointRevision, elementId, elementName, messageName, correlationKey, status, completionPending, payload, createdAt, consumedAt]
+      properties:
+        id: { type: string, format: uuid }
+        instanceId: { type: string, format: uuid }
+        processName: { type: string }
+        businessKey: { type: [string, "null"] }
+        environment:
+          type: object
+          required: [id, key, name]
+          properties:
+            id: { type: string, format: uuid }
+            key: { type: string }
+            name: { type: string }
+        checkpointRevision: { type: integer, minimum: 1 }
+        elementId: { type: string }
+        elementName: { type: string }
+        messageName: { type: string, examples: [expense.approved] }
+        correlationKey: { type: string, examples: [EXP-42] }
+        status: { type: string, enum: [WAITING, CONSUMED, CANCELLED] }
+        completionPending: { type: boolean }
+        payload:
+          oneOf: [{ type: object, additionalProperties: true }, { type: "null" }]
+        createdAt: { type: string, format: date-time }
+        consumedAt: { type: [string, "null"], format: date-time }
+    MessageDelivery:
+      type: object
+      required: [id, instanceId, processName, businessKey, environment, checkpointRevision, elementId, elementName, messageName, correlationKey, payload, status, attempts, correlationAttemptId, targetSubscriptionId, lastError, createdAt, deliveredAt]
+      properties:
+        id: { type: string, format: uuid }
+        instanceId: { type: string, format: uuid }
+        processName: { type: string }
+        businessKey: { type: [string, "null"] }
+        environment:
+          type: object
+          required: [id, key, name]
+          properties:
+            id: { type: string, format: uuid }
+            key: { type: string }
+            name: { type: string }
+        checkpointRevision: { type: integer, minimum: 1 }
+        elementId: { type: string }
+        elementName: { type: string }
+        messageName: { type: string, examples: [expense.approved] }
+        correlationKey: { type: string, examples: [EXP-42] }
+        payload: { type: object, additionalProperties: true }
+        status: { type: string, enum: [AVAILABLE, CLAIMED, DELIVERED, NO_MATCH, AMBIGUOUS] }
+        attempts: { type: integer, minimum: 0 }
+        correlationAttemptId: { type: [string, "null"], format: uuid }
+        targetSubscriptionId: { type: [string, "null"], format: uuid }
+        lastError: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        deliveredAt: { type: [string, "null"], format: date-time }
+    MessageCorrelationResult:
+      type: object
+      required: [outcome, attemptId, commandId, subscription]
+      properties:
+        outcome: { type: string, enum: [CORRELATED, NO_MATCH, AMBIGUOUS] }
+        attemptId: { type: string, format: uuid }
+        commandId: { type: [string, "null"], format: uuid }
+        subscription:
+          oneOf: [{ $ref: "#/components/schemas/MessageSubscription" }, { type: "null" }]
+    MessageCorrelationEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/MessageCorrelationResult" }
+    LockedExternalJob:
+      type: object
+      required: [id, instanceId, processName, businessKey, elementId, elementName, jobType, input, headers, effectKey, deliveryId, attempt, retryCycle, cycleAttempt, fencingToken, lockExpiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        instanceId: { type: string, format: uuid }
+        processName: { type: string }
+        businessKey: { type: [string, "null"] }
+        elementId: { type: string }
+        elementName: { type: string }
+        jobType: { type: string }
+        input: { type: object, additionalProperties: true }
+        headers: { type: object, additionalProperties: true }
+        effectKey: { type: string, pattern: '^[a-f0-9]{64}$' }
+        deliveryId: { type: string, format: uuid }
+        attempt: { type: integer, minimum: 1 }
+        retryCycle: { type: integer, minimum: 1 }
+        cycleAttempt: { type: integer, minimum: 1 }
+        fencingToken: { type: integer, minimum: 1 }
+        lockExpiresAt: { type: string, format: date-time }
+    ProcessInstanceSummary:
+      type: object
+      required: [id, deploymentId, environment, processName, businessKey, status, revision, currentElement, startedBy, createdAt, updatedAt, completedAt]
+      properties:
+        id: { type: string, format: uuid }
+        deploymentId: { type: string, format: uuid }
+        environment:
+          type: object
+          required: [id, key, name]
+          properties:
+            id: { type: string, format: uuid }
+            key: { type: string }
+            name: { type: string }
+        processName: { type: string }
+        businessKey:
+          oneOf: [{ type: string }, { type: "null" }]
+        status: { $ref: "#/components/schemas/ProcessInstanceStatus" }
+        revision: { type: integer, minimum: 0 }
+        currentElement:
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+            - { type: "null" }
+        startedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+    ProcessExecutionEvent:
+      type: object
+      required: [id, sequence, checkpointRevision, type, element, actor, data, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        checkpointRevision: { type: integer, minimum: 1 }
+        type: { type: string }
+        element:
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+            - { type: "null" }
+        actor:
+          oneOf: [{ $ref: "#/components/schemas/ReviewPrincipal" }, { type: "null" }]
+        data: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    RuntimeIncident:
+      type: object
+      required: [id, code, message, status, owner, notes, jobId, timerId, subscriptionId, createdAt, resolvedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        message: { type: string }
+        status: { type: string, enum: [OPEN, RESOLVED] }
+        owner:
+          oneOf: [{ $ref: "#/components/schemas/ReviewPrincipal" }, { type: "null" }]
+        notes:
+          type: array
+          items:
+            type: object
+            required: [id, action, body, author, createdAt]
+            properties:
+              id: { type: string, format: uuid }
+              action: { type: string, enum: [NOTE, OWNER_CHANGED, RETRY_STARTED, RESOLVED] }
+              body: { type: [string, "null"] }
+              author: { $ref: "#/components/schemas/ReviewPrincipal" }
+              createdAt: { type: string, format: date-time }
+        jobId: { type: [string, "null"], format: uuid }
+        timerId: { type: [string, "null"], format: uuid }
+        subscriptionId: { type: [string, "null"], format: uuid }
+        createdAt: { type: string, format: date-time }
+        resolvedAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+    EvaluateDecision:
+      type: object
+      required: [deploymentId, decisionKey, input]
+      additionalProperties: false
+      properties:
+        deploymentId: { type: string, format: uuid }
+        decisionKey: { type: string, minLength: 2, maxLength: 120, pattern: '^[a-z][a-z0-9.-]+$' }
+        input: { type: object, additionalProperties: true }
+    DecisionEvaluation:
+      type: object
+      required: [id, deploymentId, environmentId, decisionArtifactVersionId, decisionKey, decision, input, output, matchedRuleIds, outcome, source, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        deploymentId: { type: string, format: uuid }
+        environmentId: { type: string, format: uuid }
+        decisionArtifactVersionId: { type: string, format: uuid }
+        decisionKey: { type: string }
+        decision:
+          type: object
+          required: [id, name, hitPolicy]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            hitPolicy: { type: string, enum: [UNIQUE, FIRST] }
+        input: { type: object, additionalProperties: true }
+        output:
+          oneOf: [{ type: object, additionalProperties: true }, { type: "null" }]
+        matchedRuleIds:
+          type: array
+          items: { type: string }
+        outcome: { type: string, enum: [MATCHED, NO_MATCH] }
+        source:
+          oneOf:
+            - type: object
+              required: [instanceId, elementId, elementName, checkpointRevision]
+              properties:
+                instanceId: { type: string, format: uuid }
+                elementId: { type: string }
+                elementName: { type: string }
+                checkpointRevision: { type: integer, minimum: 1 }
+            - { type: "null" }
+        createdAt: { type: string, format: date-time }
+    ProcessInstance:
+      allOf:
+        - { $ref: "#/components/schemas/ProcessInstanceSummary" }
+        - type: object
+          required: [projectId, publicationId, artifactVersionId, variables, events, incidents, jobs, timers, messageSubscriptions, messageDeliveries, decisionEvaluations, checkpoint]
+          properties:
+            projectId: { type: string, format: uuid }
+            publicationId: { type: string, format: uuid }
+            artifactVersionId: { type: string, format: uuid }
+            variables: { type: object, additionalProperties: true }
+            events:
+              type: array
+              items: { $ref: "#/components/schemas/ProcessExecutionEvent" }
+            incidents:
+              type: array
+              items: { $ref: "#/components/schemas/RuntimeIncident" }
+            jobs:
+              type: array
+              items: { $ref: "#/components/schemas/ExternalJob" }
+            timers:
+              type: array
+              items: { $ref: "#/components/schemas/ProcessTimer" }
+            messageSubscriptions:
+              type: array
+              items: { $ref: "#/components/schemas/MessageSubscription" }
+            messageDeliveries:
+              type: array
+              items: { $ref: "#/components/schemas/MessageDelivery" }
+            decisionEvaluations:
+              type: array
+              items: { $ref: "#/components/schemas/DecisionEvaluation" }
+            checkpoint:
+              oneOf:
+                - type: object
+                  required: [revision, envelopeSha256, projectionSha256, adapter]
+                  properties:
+                    revision: { type: integer, minimum: 1 }
+                    envelopeSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+                    projectionSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+                    adapter:
+                      type: object
+                      required: [name, version, engineVersion]
+                      properties:
+                        name: { type: string }
+                        version: { type: string }
+                        engineVersion: { type: string }
+                - { type: "null" }
+    ProcessTask:
+      type: object
+      required: [id, instanceId, processName, businessKey, elementId, elementName, status, completionPending, assignee, candidateGroup, claimable, dueAt, priority, delegatedFrom, delegatedBy, delegatedAt, assignmentHistory, variables, form, submission, createdAt, completedAt]
+      properties:
+        id: { type: string, format: uuid }
+        instanceId: { type: string, format: uuid }
+        processName: { type: string }
+        businessKey:
+          oneOf: [{ type: string }, { type: "null" }]
+        elementId: { type: string }
+        elementName: { type: string }
+        status: { type: string, enum: [OPEN, COMPLETED, CANCELLED] }
+        completionPending: { type: boolean }
+        assignee:
+          oneOf: [{ $ref: "#/components/schemas/ReviewPrincipal" }, { type: "null" }]
+        candidateGroup:
+          oneOf:
+            - type: object
+              required: [id, key, name]
+              properties:
+                id: { type: string, format: uuid }
+                key: { $ref: "#/components/schemas/StableKey" }
+                name: { type: string }
+            - { type: "null" }
+        claimable: { type: boolean }
+        dueAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+        priority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+        delegatedFrom:
+          oneOf: [{ $ref: "#/components/schemas/ReviewPrincipal" }, { type: "null" }]
+        delegatedBy:
+          oneOf: [{ $ref: "#/components/schemas/ReviewPrincipal" }, { type: "null" }]
+        delegatedAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+        assignmentHistory:
+          type: array
+          items: { $ref: "#/components/schemas/ProcessTaskAssignmentEvent" }
+        variables: { type: object, additionalProperties: true }
+        form:
+          oneOf:
+            - type: object
+              required: [key, versionId, schema, schemaSha256, data]
+              properties:
+                key: { $ref: "#/components/schemas/StableKey" }
+                versionId: { type: string, format: uuid }
+                schema: { type: object, additionalProperties: true }
+                schemaSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+                data: { type: object, additionalProperties: true }
+            - { type: "null" }
+        submission:
+          oneOf: [{ type: object, additionalProperties: true }, { type: "null" }]
+        createdAt: { type: string, format: date-time }
+        completedAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+    ProcessTaskAssignmentEvent:
+      type: object
+      required: [id, fromAssignee, toAssignee, changedBy, dueAt, note, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        fromAssignee:
+          oneOf: [{ $ref: "#/components/schemas/ReviewPrincipal" }, { type: "null" }]
+        toAssignee: { $ref: "#/components/schemas/ReviewPrincipal" }
+        changedBy: { $ref: "#/components/schemas/ReviewPrincipal" }
+        dueAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+        note:
+          oneOf: [{ type: string }, { type: "null" }]
+        createdAt: { type: string, format: date-time }
+    TaskAssigneeCandidate:
+      allOf:
+        - { $ref: "#/components/schemas/ReviewPrincipal" }
+        - type: object
+          required: [role]
+          properties:
+            role: { $ref: "#/components/schemas/MembershipRole" }
+    UpdateProcessTaskAssignment:
+      type: object
+      required: [assigneeId]
+      additionalProperties: false
+      properties:
+        assigneeId: { type: string, format: uuid }
+        dueAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+        priority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+        note:
+          oneOf: [{ type: string, minLength: 1, maxLength: 1000 }, { type: "null" }]
+    StartProcessInstance:
+      type: object
+      required: [deploymentId]
+      additionalProperties: false
+      properties:
+        deploymentId: { type: string, format: uuid }
+        businessKey:
+          oneOf: [{ type: string, minLength: 1, maxLength: 255 }, { type: "null" }]
+        variables: { type: object, additionalProperties: true }
+        idempotencyKey:
+          oneOf: [{ type: string, minLength: 1, maxLength: 255 }, { type: "null" }]
+    CompleteProcessTask:
+      type: object
+      additionalProperties: false
+      properties:
+        output: { type: object, additionalProperties: true }
+        idempotencyKey:
+          oneOf: [{ type: string, minLength: 1, maxLength: 255 }, { type: "null" }]
+    CorrelateMessage:
+      type: object
+      required: [environmentId, messageName, correlationKey]
+      additionalProperties: false
+      properties:
+        environmentId: { type: string, format: uuid }
+        messageName: { type: string, minLength: 2, maxLength: 120, pattern: '^[a-z][a-z0-9.-]+$' }
+        correlationKey: { type: string, minLength: 1, maxLength: 255 }
+        payload: { type: object, additionalProperties: true }
+    ProcessInstanceEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/ProcessInstance" }
+    ArtifactEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Artifact" }
+        meta:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            issues:
+              type: array
+              items: { type: object, additionalProperties: true }
+  responses:
+    InvalidRequest:
+      description: Request body or If-Match header is invalid
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    InvalidBpmn:
+      description: BPMN source is malformed, unsafe, or exceeds parser limits
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    AuthenticationRequired:
+      description: The browser session is absent, invalid, revoked, or expired
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    PermissionDenied:
+      description: The authenticated principal lacks a membership or required permission
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    NotFound:
+      description: Resource not found in the authorized organization and workspace scope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    ResourceConflict:
+      description: A stable key already exists
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    DatabaseUnavailable:
+      description: PostgreSQL is unavailable or migrations have not run
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    ReviewConflict:
+      description: Review policy, current-revision, open-comment, or terminal-state conflict
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    PublicationConflict:
+      description: Review is not publication-eligible or the Publication bundle is incomplete
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    RuntimeConflict:
+      description: Runtime profile, single-pending-command, active-wait, or idempotency conflict
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }

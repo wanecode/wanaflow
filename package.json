@@ -1,0 +1,40 @@
+{
+  "name": "wanaflow",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "An open-source business process studio and durable workflow runtime.",
+  "homepage": "https://github.com/wanecode/wanaflow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wanecode/wanaflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wanecode/wanaflow/issues"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "auth:bootstrap": "pnpm --filter @wanaflow/web auth:bootstrap",
+    "build": "turbo build",
+    "db:migrate": "pnpm --filter @wanaflow/db migrate",
+    "db:start": "docker compose up -d --wait postgres",
+    "db:stop": "docker compose stop postgres",
+    "dev": "turbo dev --filter=@wanaflow/web --filter=@wanaflow/worker",
+    "dev:setup": "pnpm db:start && pnpm db:migrate && pnpm auth:bootstrap",
+    "lint": "turbo lint",
+    "test:integration": "bash tooling/test/with-test-db.sh",
+    "test:ui": "bash tooling/test/with-test-db.sh",
+    "worker": "pnpm --filter @wanaflow/worker start",
+    "typecheck": "turbo typecheck"
+  },
+  "devDependencies": {
+    "shadcn": "4.17.0",
+    "tsx": "4.23.12",
+    "turbo": "2.10.9",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

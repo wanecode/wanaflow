@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js and Turborepo
+.next/
+out/
+.turbo/
+
+# local configuration
+.env
+.env.*
+!.env.example
+!.env.selfhost.example
+
+# test and tooling output
+coverage/
+playwright-report/
+test-results/
+artifacts/
+backups/
+*.tsbuildinfo
+
+# editor and operating system files
+.DS_Store
+.idea/
+.vscode/
+*.swp

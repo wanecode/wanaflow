@@ -1,0 +1,44 @@
+name: Bug report
+description: Report reproducible behavior that does not match Wanaflow's contract.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for helping make Wanaflow more trustworthy. Do not disclose vulnerabilities here; use the Security tab.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide the smallest safe sequence, API request, or model that reproduces the issue.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Wanaflow revision
+      description: Commit SHA, tag, or container image identifier.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Environment
+      options:
+        - Local development
+        - Docker Compose
+        - Other self-hosted environment
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Relevant evidence
+      description: Add sanitized logs, screenshots, BPMN/DMN/form source, or other context.

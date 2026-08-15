@@ -1,0 +1,26 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$WANAFLOW_SITE_ADDRESS} {
+	encode zstd gzip
+
+	reverse_proxy web:3000 {
+		health_uri /api/health
+		health_interval 10s
+		health_timeout 5s
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

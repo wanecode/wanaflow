@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "BETTER_AUTH_SECRET",
+    "BETTER_AUTH_URL",
+    "WANAFLOW_BOOTSTRAP_MODE",
+    "WANAFLOW_AUTH_SIGN_IN_RATE_LIMIT",
+    "WANAFLOW_WORKER_ID",
+    "WANAFLOW_WORKER_POLL_MS",
+    "COPILOTKIT_TELEMETRY_DISABLED",
+    "NEXT_TELEMETRY_DISABLED",
+    "TURBO_TELEMETRY_DISABLED"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "cache": false
+    }
+  }
+}

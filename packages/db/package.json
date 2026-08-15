@@ -1,0 +1,27 @@
+{
+  "name": "@wanaflow/db",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrate": "./src/migrate.ts"
+  },
+  "scripts": {
+    "migrate": "tsx src/migrate.ts",
+    "test": "vitest run --no-file-parallelism",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wanaflow/modeling": "workspace:*",
+    "@wanaflow/runtime": "workspace:*",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@types/pg": "8.21.0",
+    "tsx": "4.23.12",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "@wanaflow/web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "auth:bootstrap": "tsx scripts/bootstrap-owner.ts",
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "start": "next start",
+    "test:ui": "pnpm build && playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "2.0.67",
+    "@bpmn-io/form-js": "1.24.1",
+    "@copilotkit/react-core": "1.67.1",
+    "@copilotkit/runtime": "1.67.1",
+    "@wanaflow/db": "workspace:*",
+    "@wanaflow/modeling": "workspace:*",
+    "@wanaflow/runtime": "workspace:*",
+    "@wanaflow/ui": "workspace:*",
+    "ai": "6.0.255",
+    "better-auth": "1.6.27",
+    "bpmn-auto-layout": "1.3.0",
+    "bpmn-js": "18.24.0",
+    "bpmn-js-properties-panel": "5.63.0",
+    "dmn-js": "17.10.1",
+    "lucide-react": "1.31.0",
+    "next": "16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.0",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.12",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules
+.turbo
+apps/web/.next
+.git
+.env
+.env.*
+*.log
+backups
+artifacts
+coverage
+playwright-report
+test-results

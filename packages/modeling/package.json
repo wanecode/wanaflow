@@ -1,0 +1,25 @@
+{
+  "name": "@wanaflow/modeling",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bpmn-io/feelin": "6.1.0",
+    "bpmn-moddle": "10.1.0",
+    "dmn-moddle": "12.0.1"
+  },
+  "devDependencies": {
+    "@types/bpmn-moddle": "10.0.0",
+    "@types/node": "26.2.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

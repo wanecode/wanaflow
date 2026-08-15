@@ -1,0 +1,31 @@
+name: Product proposal
+description: Propose a bounded improvement to Wanaflow's Studio, contracts, or runtime.
+title: "proposal: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which user or operator problem should Wanaflow solve?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the observable result without prescribing every implementation detail.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+      description: What can users do today, and what would this proposal cost in complexity or safety?
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: How should reviewers know the change is correct and useful?
+    validations:
+      required: true

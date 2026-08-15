@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  '@carbon/grid': false
+  '@carbon/layout': false
+  '@scarf/scarf': false
+  esbuild: true
+  inferno: false
+  sharp: true
+  unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@3.0.173'
+  - ai@6.0.255

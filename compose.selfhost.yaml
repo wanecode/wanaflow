@@ -1,0 +1,138 @@
+name: wanaflow-selfhost
+
+x-wanaflow-image: &wanaflow-image
+  image: ${WANAFLOW_IMAGE:-wanaflow:local}
+  build:
+    context: .
+    target: release
+
+services:
+  postgres:
+    image: postgres:18.4-alpine3.23
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wanaflow}
+      POSTGRES_USER: ${POSTGRES_USER:-wanaflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wanaflow} -d ${POSTGRES_DB:-wanaflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - wanaflow-postgres:/var/lib/postgresql/18/docker
+    networks:
+      - wanaflow
+
+  migrate:
+    <<: *wanaflow-image
+    environment: &wanaflow-environment
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wanaflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wanaflow}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
+      WANAFLOW_AUTH_SIGN_IN_RATE_LIMIT: ${WANAFLOW_AUTH_SIGN_IN_RATE_LIMIT:-5}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      WANAFLOW_AI_MODEL: ${WANAFLOW_AI_MODEL:-deepseek-v4-flash}
+      WANAFLOW_AI_BASE_URL: ${WANAFLOW_AI_BASE_URL:-https://api.deepseek.com/v1}
+      COPILOTKIT_TELEMETRY_DISABLED: ${COPILOTKIT_TELEMETRY_DISABLED:-true}
+      WANAFLOW_BLOB_DRIVER: filesystem
+      WANAFLOW_BLOB_PATH: /var/lib/wanaflow/blobs
+    command: ["pnpm", "db:migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - wanaflow
+
+  web:
+    <<: *wanaflow-image
+    init: true
+    restart: unless-stopped
+    environment: *wanaflow-environment
+    expose:
+      - "3000"
+    volumes:
+      - wanaflow-blobs:/var/lib/wanaflow/blobs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - wanaflow
+
+  worker:
+    <<: *wanaflow-image
+    init: true
+    restart: unless-stopped
+    environment: *wanaflow-environment
+    command: ["pnpm", "--filter", "@wanaflow/worker", "start"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('node:net');const u=new URL(process.env.DATABASE_URL);const s=net.createConnection({host:u.hostname,port:Number(u.port||5432)});const done=c=>{s.destroy();process.exit(c)};s.setTimeout(2000,()=>done(1));s.on('connect',()=>done(0));s.on('error',()=>done(1));"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+      start_period: 10s
+    networks:
+      - wanaflow
+
+  caddy:
+    image: caddy:2.10-alpine
+    init: true
+    restart: unless-stopped
+    environment:
+      WANAFLOW_SITE_ADDRESS: ${WANAFLOW_SITE_ADDRESS:?Set WANAFLOW_SITE_ADDRESS}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports:
+      - "${WANAFLOW_HTTP_PORT:-80}:80"
+      - "${WANAFLOW_HTTPS_PORT:-443}:443"
+      - "${WANAFLOW_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./tooling/selfhost/Caddyfile:/etc/caddy/Caddyfile:ro
+      - wanaflow-caddy-data:/data
+      - wanaflow-caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - wanaflow
+
+  bootstrap:
+    <<: *wanaflow-image
+    profiles: ["setup"]
+    environment:
+      <<: *wanaflow-environment
+      WANAFLOW_BOOTSTRAP_EMAIL: ${WANAFLOW_BOOTSTRAP_EMAIL:-}
+      WANAFLOW_BOOTSTRAP_PASSWORD: ${WANAFLOW_BOOTSTRAP_PASSWORD:-}
+      WANAFLOW_BOOTSTRAP_NAME: ${WANAFLOW_BOOTSTRAP_NAME:-Organization owner}
+      WANAFLOW_BOOTSTRAP_REVIEWER_EMAIL: ${WANAFLOW_BOOTSTRAP_REVIEWER_EMAIL:-}
+      WANAFLOW_BOOTSTRAP_REVIEWER_PASSWORD: ${WANAFLOW_BOOTSTRAP_REVIEWER_PASSWORD:-}
+      WANAFLOW_BOOTSTRAP_REVIEWER_NAME: ${WANAFLOW_BOOTSTRAP_REVIEWER_NAME:-Independent reviewer}
+      WANAFLOW_BOOTSTRAP_ORGANIZATION_KEY: ${WANAFLOW_BOOTSTRAP_ORGANIZATION_KEY:-local}
+      WANAFLOW_BOOTSTRAP_ORGANIZATION_NAME: ${WANAFLOW_BOOTSTRAP_ORGANIZATION_NAME:-Wanaflow}
+      WANAFLOW_BOOTSTRAP_WORKSPACE_KEY: ${WANAFLOW_BOOTSTRAP_WORKSPACE_KEY:-default}
+      WANAFLOW_BOOTSTRAP_PROJECT_KEY: ${WANAFLOW_BOOTSTRAP_PROJECT_KEY:-first-processes}
+    command: ["pnpm", "auth:bootstrap"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - wanaflow
+
+volumes:
+  wanaflow-postgres:
+  wanaflow-blobs:
+  wanaflow-caddy-data:
+  wanaflow-caddy-config:
+
+networks:
+  wanaflow:
