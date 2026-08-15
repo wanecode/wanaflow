@@ -472,6 +472,7 @@ function ExperienceAgent({
   const runningRef = useRef(false);
   const experienceRef = useRef(experience);
   const agentRef = useRef(agent);
+  const recoveryReceiptRef = useRef<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [interruptedHumanTool, setInterruptedHumanTool] = useState<InterruptedHumanTool | null>(
     () => findInterruptedHumanTool(experience.transcript),
@@ -695,6 +696,16 @@ function ExperienceAgent({
         timer = setTimeout(() => {
           void saveAiExperienceTranscript(experience.id, messages as unknown[]).catch(() => undefined);
         }, 650);
+        const receipt = recoveryReceiptRef.current;
+        if (receipt) {
+          const receiptIndex = messages.findIndex((message) => message.role === "user" && message.content === receipt);
+          const assistantReplied = receiptIndex >= 0
+            && messages.slice(receiptIndex + 1).some((message) => message.role === "assistant");
+          if (assistantReplied) {
+            recoveryReceiptRef.current = null;
+            setRecoveryReceipt(null);
+          }
+        }
       },
       onRunFailed({ error }) { setRuntimeError(error.message); },
     });
@@ -741,6 +752,7 @@ function ExperienceAgent({
         }
       }
     }
+    recoveryReceiptRef.current = content;
     setRecoveryReceipt(content);
     setInterruptedHumanTool(null);
     const currentAgent = agentRef.current;
