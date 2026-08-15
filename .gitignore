@@ -17,8 +17,8 @@ out/
 coverage/
 playwright-report/
 test-results/
-artifacts/
-backups/
+/artifacts/
+/backups/
 *.tsbuildinfo
 
 # editor and operating system files
